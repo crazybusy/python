@@ -17,6 +17,7 @@ def getpercentfin():
 def mineblock(blocktemplate):
     print(blocktemplate)
 
-print(getpercentfin())
+if __name__ == "__main__":
+    print(getpercentfin())
 
-input()
+    input()

@@ -1,8 +1,10 @@
 import json
 import pyotp, qrcode
 import os
+import logging
 
-def offerotp(username, password, otp_list):
+
+def offerotp(username, password):
     print("Would you like to use OTP instead of password?(Y/N)")
     choice= input();
     if choice == 'Y' or choice == 'y':
@@ -14,64 +16,108 @@ def offerotp(username, password, otp_list):
         img.show()
         code = input()
         return totp.verify(code, valid_window=1)
-    return
+    else:
+        return False
             
 
-def login():
+def login(create_flag = False):
     print("Username: ")
     username = input ()
 
-    if username in password_list:
-        if username in otp_list:
-            print("OTP: ")
-            otp = input()
-            password = password_list[username]
-            totp = pyotp.totp.TOTP(password)
+    print("Password: ")
+    password = input ()
+    
+    success = False
+
+    user = read_user_file(username)
+        
+    logger.debug(user)
+
+    if user:
+        if user.get("otp_enabled"):
+            logger.info("User is OTP enabled")
+            totp = pyotp.totp.TOTP(user.get('password'))
 
             if totp.verify(otp, valid_window=1):
-                print ("Password accepted")
+                logger.info ("Password accepted")
             else:
-                print ("Password not accepted")
+                logger.info ("Password not accepted")
         else:
-            print("Password: ")
-            password = input ()
-            if password == password_list[username] :
-                print ("Password accepted")
-                if offerotp(username, password, otp_list):
-                    otp_list[username]="true"
-                    print ("User enabled with OTP")
+            if password == user.get('password'):
+                logger.info ("Password accepted")
+                if create_flag and\
+                    not(user.get('otp_enabled')):
+                    if offerotp(username, password):
+                        user['otp_enabled'] = True
+                        logger.info("User enabled with OTP")
+                    else:
+                        user['otp_enabled'] = False
             else:
-                print ("Password not accepted")
-    else:
-        print ("User %s not found. Enter password to create"% username)
-        password = input ()
-        password_list[username]=password
+                logger.info ("Password not accepted")
+    elif create_flag:
+        print ("User %s not found. Enter password again to create"% username)
         
+        if password == input ():
+            user= {}
+            user['name'] = username
+            user['password'] = password
+            logger.info("User password created")
+            if offerotp(username, user['password']):
+                user['otp_enabled'] = True
+            else:
+                user['otp_enabled'] = False
+            logger.info("User enabled with OTP: {}".format(
+                user['otp_enabled'] ))
+        else:
+            logger.info("Passwords didnt match. Exiting..")
+    else:
+        logger.info("Invalid username or password entered")
+    return user
 
-password_list ={}
-otp_list={}
+def run_application(args):
+    from subprocess import run
+    run(args)
+    return
 
+def read_user_file(filename):
+    filename = PATH + filename
+    if os.path.isfile(filename):
+        with open(filename) as infile:
+            user_details= json.load(infile)
+    else:
+        user_details = None
+    return user_details
 
-filename = 'passwords.txt'
-if os.path.isfile(filename):
-    with open(filename) as infile:
-        password_list = json.load(infile)
-
-filename = 'otp.txt'
-if os.path.isfile(filename):
-    with open(filename) as infile:
-        otp_list = json.load(infile)
-try:
-    login()
-    from bit import getpercentfin
-    print("Bitcoin Client is %s percent synchronised with blockchain...."% getpercentfin())
+def def_update_user(user):
+    filename = PATH + user['name']
+    with open(filename, 'w') as outfile:
+            json.dump(user, outfile)
     
-except Exception:
-    print("Error, lets start again")
 
-with open('passwords.txt', 'w') as outfile:
-        json.dump(password_list,outfile )
+#------------------------------------------------
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
-with open('otp.txt', 'w') as outfile:
-        json.dump(otp_list,outfile )        
+PATH = './'
+#------------------------------------------------
+
+if __name__ == "__main__":
     
+    try:
+        user = login(False)
+        if user:
+            logger.debug("Updating User")
+            def_update_user(user)
+            logger.info("Login successfull. Now running application")
+            import sys
+            if(len(sys.argv) > 1):
+                run_application(str(sys.argv[1:]))
+            else:
+                run_application("python bit.py")        
+    
+    
+    except Exception as err:
+        logger.error(err)
+        logger.info("Error, lets start again")
+
+        
