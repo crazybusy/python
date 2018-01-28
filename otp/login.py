@@ -28,7 +28,7 @@ def offerotp(user, app_name):
 #Generate the QR Code and output it onto the command line as ASCII Art
         qr = qrcode.QRCode()
         qr.add_data(pyotp.totp.TOTP(get_otp_key(user)).provisioning_uri(
-            user[username], issuer_name=app_name))
+            user['name'], issuer_name=app_name))
         qr.make()
 
         qrcode.QRCode.print_ascii(qr)
@@ -86,8 +86,8 @@ OTP Support
             logger.info("User is OTP enabled")
             
 #Verify the entered password/code with OTP from key on file
-            if verify_otp(user, otp):
-                status = login_success(user, payload, True)
+            if verify_otp(user, password):
+                status = login_success(user, payload)
             else:
                 status= login_failed(user, payload, FAIL_REASONS.INCORRECT_OTP)                
         else:
@@ -144,10 +144,10 @@ generated seed
 def get_otp_key(user):
     return user['password']
 
-def verify_otp(user, totp):
+def verify_otp(user, otp, totp = None):
     if not(totp):
         totp = pyotp.totp.TOTP(get_otp_key(user))
-    return totp.verify(otp, OTP_VALID_WINDOW)
+    return totp.verify(otp, valid_window = OTP_VALID_WINDOW)
 
 def run_application(args):
     from subprocess import run
@@ -155,17 +155,21 @@ def run_application(args):
     return
 
 def read_user_file(user):
+    if not(os.path.isdir(DATA_DIR)):
+        raise Exception ("Data directory " + DATA_DIR +" not found")
+    
     if os.path.isfile(USERS_FILE):
         with open(USERS_FILE) as infile:
             global all_users
             all_users = json.load(infile)
             user_details= all_users.get(user)
-    else:
+    else:        
         user_details = None
+    logger.debug(USERS_FILE)
     return user_details
 
 def def_update_user(user):
-    if user['name'] in all_users:
+    if all_users.get(user['name']):
         del all_users[user['name']]
     all_users[user['name']] = user    
     with open(USERS_FILE, 'w') as outfile:
@@ -173,12 +177,13 @@ def def_update_user(user):
     
 
 #---------------------Global Variabled------------------------------
+all_users = {}
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 APPLICATION_NAME = "Secure App"
-DATA_DIR = 'data'
+DATA_DIR = 'data/'
 USERS_FILE = DATA_DIR + "users.users"
 RUN_WITHOUT_USER = True
 
@@ -202,7 +207,7 @@ if __name__ == "__main__":
         else:
             payload = "python bit.py"
         status = login(app_name = APPLICATION_NAME,
-                   payload = payload, create_flag = True)
+                   payload = payload, create_flag = False)
         sys.exit(status)
     
     except Exception as err:
