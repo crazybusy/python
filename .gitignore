@@ -1,6 +1,9 @@
 #Ignore data directories
 */data/*
 
+#Ignore test files for general experimentation
+*test*.py
+
 #CSV as they contain mostly data
 *.csv
 
