@@ -1,60 +1,110 @@
-import json
+import json, enum
 import pyotp, qrcode
 import os
 import logging
 
+#-----------------------Functions----------------------------------------
 
-def offerotp(username, password):
+'''
+Offer the option of using OTP instead of password for login to the supplied user
+Generates a QR Code that the user can scan into their Authenticator application
+to generate the OTP's
+
+To enable OTP suppport, user must scan the QR Code and generate atleast one OTP
+Code which is input into the application for verification
+
+The OTP is generated using the password, it can also be using a random seed but
+for now the password is considered a better option
+'''
+def offerotp(user, app_name):
+    
     print("Would you like to use OTP instead of password?(Y/N)")
+
     choice= input();
     if choice == 'Y' or choice == 'y':
-        print("Please scan below QR Code and enter the otp generated")
-        
-        totp = pyotp.totp.TOTP(password)
-        url = totp.provisioning_uri(username, issuer_name="Secure App")
-        img=qrcode.make(url)
-        img.show()
-        code = input()
-        return totp.verify(code, valid_window=1)
-    else:
-        return False
-            
 
-def login(create_flag = False):
+        print("Please scan below QR Code and enter the otp generated")
+
+#Generate the QR Code and output it onto the command line as ASCII Art
+        qr = qrcode.QRCode()
+        qr.add_data(pyotp.totp.TOTP(get_otp_key(user)).provisioning_uri(
+            user[username], issuer_name=app_name))
+        qr.make()
+
+        qrcode.QRCode.print_ascii(qr)
+        
+#Verify user input OTP, uses validity window of 1
+        if verify_otp(user, input()):
+            user['otp_enabled'] = True
+            def_update_user(user)
+        else:
+            user['otp_enabled'] = False
+            
+        logger.info("User enabled with OTP: {}".format(
+                user['otp_enabled'] ))
+
+    return user
+    
+'''
+Perform the main login activity
+@create_flag Allows the application to create user and offer OTP function
+to existing users
+
+This functions shows basic username and password prompt and compares the
+credentials entered to those on file.
+
+This has built in OTP support. If user is OTP enabled, it gets the OTP key
+from file and uses it to generate the OTP Server Side comparison
+
+If the create flag is set, it allows the creation of user and enabling OTP
+for user 
+'''
+def login(app_name, payload = None,
+          create_flag = False, no_otp_flag = False, offer_otp_flag = True):
+    logger.debug("Attempting login. App Name: {}, Command = {}".format(
+        app_name, payload))
+    status = 0
+
+#Show the login prompt
     print("Username: ")
     username = input ()
 
     print("Password: ")
     password = input ()
+
+#Load the details of the user from file
+    user = read_user_file(username)       
     
-    success = False
-
-    user = read_user_file(username)
-        
-    logger.debug(user)
-
+#If the user is successfully loaded
     if user:
-        if user.get("otp_enabled"):
+        logger.debug(user)
+        '''
+Check if the user is enabled for OTP and the application is also run with
+OTP Support
+        '''       
+        if user.get("otp_enabled") and not(no_otp_flag):
             logger.info("User is OTP enabled")
-            totp = pyotp.totp.TOTP(user.get('password'))
-
-            if totp.verify(otp, valid_window=1):
-                logger.info ("Password accepted")
+            
+#Verify the entered password/code with OTP from key on file
+            if verify_otp(user, otp):
+                status = login_success(user, payload, True)
             else:
-                logger.info ("Password not accepted")
+                status= login_failed(user, payload, FAIL_REASONS.INCORRECT_OTP)                
         else:
-            if password == user.get('password'):
-                logger.info ("Password accepted")
-                if create_flag and\
+#If the user is not otp enabled or otp flag is false, check password            
+            if password == user.get('password'):                
+#If the offer otp flag is set, then offer the user the option to upgrade to OTP                
+                if offer_otp_flag and\
                     not(user.get('otp_enabled')):
-                    if offerotp(username, password):
-                        user['otp_enabled'] = True
-                        logger.info("User enabled with OTP")
-                    else:
-                        user['otp_enabled'] = False
+                    user= offerotp(user, app_name)
+#If everything is okay, then login and execute payload                    
+                status = login_success(user, payload)
             else:
-                logger.info ("Password not accepted")
+#report login failed
+                status=\
+                    login_failed(user, payload, FAIL_REASONS.INCORRECT_PASSWORD)
     elif create_flag:
+#If the create flag is set, create the user by asking for repeat password        
         print ("User %s not found. Enter password again to create"% username)
         
         if password == input ():
@@ -62,61 +112,102 @@ def login(create_flag = False):
             user['name'] = username
             user['password'] = password
             logger.info("User password created")
-            if offerotp(username, user['password']):
-                user['otp_enabled'] = True
-            else:
-                user['otp_enabled'] = False
-            logger.info("User enabled with OTP: {}".format(
-                user['otp_enabled'] ))
+            user= offerotp(user, app_name)
+            def_update_user(user)
+            login_success(user, payload)
         else:
-            logger.info("Passwords didnt match. Exiting..")
-    else:
-        logger.info("Invalid username or password entered")
-    return user
+            status=\
+                login_failed(user, payload, FAIL_REASONS.REPEAT_PASSWORD)
+    else:        
+        status=\
+            login_failed(user, payload, FAIL_REASONS.NO_MATCHING_USER)
+    
+    return status
+
+#--------------------Helper Methods--------------------------------------
+#If everything is okay, then login and execute payload
+def login_success(user, payload):    
+    logger.info ("Login successfull")
+    return run_application(payload)    
+
+#If login failed, execute payload without user
+def login_failed(user, payload, fail_reason):
+    logger.info ("Login failed: {}".format(fail_reason))
+    if RUN_WITHOUT_USER:
+        return run_application(payload)
+    return
+
+'''
+Currently the password is used as the OTP key but it could be randomly
+generated seed
+'''
+def get_otp_key(user):
+    return user['password']
+
+def verify_otp(user, totp):
+    if not(totp):
+        totp = pyotp.totp.TOTP(get_otp_key(user))
+    return totp.verify(otp, OTP_VALID_WINDOW)
 
 def run_application(args):
     from subprocess import run
     run(args)
     return
 
-def read_user_file(filename):
-    filename = PATH + filename
-    if os.path.isfile(filename):
-        with open(filename) as infile:
-            user_details= json.load(infile)
+def read_user_file(user):
+    if os.path.isfile(USERS_FILE):
+        with open(USERS_FILE) as infile:
+            global all_users
+            all_users = json.load(infile)
+            user_details= all_users.get(user)
     else:
         user_details = None
     return user_details
 
 def def_update_user(user):
-    filename = PATH + user['name']
-    with open(filename, 'w') as outfile:
-            json.dump(user, outfile)
+    if user['name'] in all_users:
+        del all_users[user['name']]
+    all_users[user['name']] = user    
+    with open(USERS_FILE, 'w') as outfile:
+            json.dump(all_users, outfile)
     
 
-#------------------------------------------------
+#---------------------Global Variabled------------------------------
+
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-PATH = './'
-#------------------------------------------------
+APPLICATION_NAME = "Secure App"
+DATA_DIR = 'data'
+USERS_FILE = DATA_DIR + "users.users"
+RUN_WITHOUT_USER = True
+
+def enum(*args):
+    #enums = dict(zip(args, range(len(args))))
+    enums = dict(zip(args, args))
+    return type('Enum', (), enums)
+
+FAIL_REASONS = enum('NO_MATCHING_USER', 'INCORRECT_PASSWORD',
+                    'INCORRECT_OTP', 'REPEAT_PASSWORD')
+               
+OTP_VALID_WINDOW = 1
+#----------------------Main Method ----------------------------------
 
 if __name__ == "__main__":
     
-    try:
-        user = login(False)
-        if user:
-            logger.debug("Updating User")
-            def_update_user(user)
-            logger.info("Login successfull. Now running application")
-            import sys
-            if(len(sys.argv) > 1):
-                run_application(str(sys.argv[1:]))
-            else:
-                run_application("python bit.py")        
-    
+    try:        
+        import sys
+        if(len(sys.argv) > 1):
+            cstr(sys.argv[1:])
+        else:
+            payload = "python bit.py"
+        status = login(app_name = APPLICATION_NAME,
+                   payload = payload, create_flag = True)
+        sys.exit(status)
     
     except Exception as err:
+        import traceback
+        traceback.print_exception(*(sys.exc_info()))
         logger.error(err)
         logger.info("Error, lets start again")
 
