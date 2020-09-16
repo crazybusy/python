@@ -1,4 +1,0 @@
-,accuracy,formatted_address,google_place_id,input_string,latitude,longitude,number_of_results,postcode,status,type
-0,,,,"108 THE HARDWICKE VILLAGE, NORTH BRUNSWICK ST, DUBLIN 7,Dublin,Ireland",,,0,,ZERO_RESULTS,
-1,ROOFTOP,"The Cedars, Monkstown Valley, Montpelier, Monkstown, Co. Dublin, Ireland",ChIJfxXAAZcIZ0gR7XOHrYovjNE,"12 THE CEDARS, MONKSTOWN VALLEY, MONKSTOWN,Dublin,Ireland",53.2935285,-6.1616877,1,,OK,premise
-2,ROOFTOP,"148 Deel Manor, Coolrahnee, Askeaton, Co. Limerick, V94 E0E3, Ireland",ChIJl1sC9Dw5W0gRmiwB_VvazpE,"148 DEEL MANOR, ASKEATON, CO LIMERICK,Limerick,Ireland",52.60155400000001,-8.980311,1,V94 E0E3,OK,street_address
